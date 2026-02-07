@@ -26,7 +26,7 @@ class MenuGenerator:
         self.ext = options.file_format
         self.fonts = [json.loads(f.replace("'", '"')) for f in options.fonts]
         self.replace_text = options.replace_text
-        self.seperator = options.seperator
+        self.separator = options.separator
 
     def write_menu(self, recipes):
         template = self.open_template()
@@ -95,18 +95,18 @@ class MenuGenerator:
             return len(' '.join(x['ingredients']))
 
         def _length_recipe_ing(x):
-            return len(self.options.seperator.join(x))
+            return len(self.options.separator.join(x))
 
         def _chunk_ingredients(before, after):
             pairs = []
-            seperator = self.options.seperator.replace(" ", "~|~")
-            after = f' {seperator} '.join(after).split()
+            separator = self.options.separator.replace(" ", "~|~")
+            after = f' {separator} '.join(after).split()
             for x in before:
                 chunk = ''
                 while after and len(x) >= len(chunk + after[0]):
                     next_chunk = after.pop(0)
                     if chunk == '':
-                        if next_chunk == seperator:
+                        if next_chunk == separator:
                             next_chunk = after.pop(0)
                         chunk += next_chunk
                     else:

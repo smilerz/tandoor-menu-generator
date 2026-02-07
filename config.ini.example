@@ -45,7 +45,7 @@ choices : 5                                             # number of recipes to c
 # create_mp : false                                 # Add mealplans for chosen recipes
 # share_with: []                                    # Share mealplan with ID(s)
 
-# mp_type :                                         # (required) id of meal play type; seperate mealplan types are strongly encouraged
+# mp_type :                                         # (required) id of meal plan type; separate mealplan types are strongly encouraged
 # mp_note : Created by: Tandoor Menu Generator
 # cleanup_mp : False                                # Delete uncooked mealplans at next execution
 # cleanup_date : -7days                             # Starting date to cleanup uncooked mealplans in YYYY-MM-DD format or -XXdays
@@ -74,4 +74,4 @@ replace_text: {
 #            ]
 #        }]
 #        }
-# seperator: ' - '                                               # seperator to use when concatanating ingredients
+# separator: ' - '                                               # separator to use when concatenating ingredients

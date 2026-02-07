@@ -225,7 +225,7 @@ def parse_args():
     parser.add_argument('--create_mp', action='store_true', default=False, help='Add mealplans for chosen recipes.')
     parser.add_argument('--share_with', nargs='*', default=[], help='Share mealplan with ID(s).')
     parser.add_argument('--mp_date', type=str, default='0days', help='Date to create mealplan in YYYY-MM-DD format or XXdays.')
-    parser.add_argument('--mp_type', help='ID of meal play type; seperate mealplan types are strongly encouraged.')
+    parser.add_argument('--mp_type', help='ID of meal plan type; separate mealplan types are strongly encouraged.')
     parser.add_argument('--mp_note', type=str, default='Created by: Tandoor Menu Generator.')
     parser.add_argument('--cleanup_mp', action='store_true', default=False, help='Delete uncooked mealplans at next execution.')
     parser.add_argument('--cleanup_date', type=str, default='-7days', help='Starting date to cleanup uncooked mealplans in YYYY-MM-DD format or -XXdays.')
@@ -236,10 +236,10 @@ def parse_args():
     parser.add_argument('--file_template', type=str, help='Name of SVG file located in templates/ directory.')
     parser.add_argument('--fonts', nargs='*', default=[], help='Non-system fonts required for the SVG template.')
     parser.add_argument('--replace_text', type=yaml.safe_load, help='Text to search for in the template and replace with menu details.')
-    parser.add_argument('--seperator', type=str, default=' - ', help='seperator to use when concatanating ingredients.')
+    parser.add_argument('--separator', type=str, default=' - ', help='Separator to use when concatenating ingredients.')
 
     args = parser.parse_args()
-    args.seperator = args.seperator.replace("'", "").replace('"', '')
+    args.separator = args.separator.replace("'", "").replace('"', '')
     return args
 
 
