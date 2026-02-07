@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import re
 from datetime import datetime
@@ -119,10 +120,10 @@ class MenuGenerator:
 
         # create temporary array to assign before/after values
         temp_text = []
-        for x in range(len(self.options.replace_text['recipe_text'])):
-            before = self.options.replace_text['recipe_text'][x]
-            before['after_name'] = recipes[x].name
-            before['after_ing'] = [x.name for x in recipes[x].ingredients]
+        for idx in range(len(self.options.replace_text['recipe_text'])):
+            before = dict(self.options.replace_text['recipe_text'][idx])
+            before['after_name'] = recipes[idx].name
+            before['after_ing'] = [ing.name for ing in recipes[idx].ingredients]
             temp_text.append(before)
 
         # confirm that all after strings are shorter than before strings.
@@ -183,7 +184,7 @@ class MenuGenerator:
     def archive(self, file, target_name=None):
         if not target_name:
             target_name = file
-        if self.logger.loglevel == 10:
+        if self.logger.loglevel == logging.DEBUG:
             archive_dir = os.path.join(self.template_dir, 'archive')
             if not os.path.exists(archive_dir):
                 os.makedirs(archive_dir)

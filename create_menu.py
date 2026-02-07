@@ -1,11 +1,12 @@
 import json
+import logging
 import os
+import sys
 
 import configargparse
 import yaml
 
 from mealplan import MealPlanManager
-from menu import MenuGenerator
 from models import Book, Food, Keyword, Recipe
 from solver import RecipePicker
 from tandoor_api import TandoorAPI
@@ -13,14 +14,6 @@ from utils import format_date, setup_logging, str2bool
 
 
 class Menu:
-    options = None
-    recipe_picker = None
-    keyword_constraints = None
-    food_constraints = None
-    book_constraints = None
-    rating_constraints = None
-    cookedon_constraints = None
-    createdon_constraints = None
 
     def __init__(self, options):
         self.options = options
@@ -29,10 +22,18 @@ class Menu:
         self.tandoor = TandoorAPI(self.options.url, self.options.token, self.logger, cache=int(self.options.cache))
         self.choices = int(self.options.choices)
         self.recipes = []
+        self.selected_recipes = []
+        self.recipe_picker = None
+        self.keyword_constraints = []
+        self.food_constraints = []
+        self.book_constraints = []
+        self.rating_constraints = []
+        self.cookedon_constraints = []
+        self.createdon_constraints = []
 
-        self.__format_constraints__()
+        self._format_constraints()
 
-    def __format_constraints__(self):
+    def _format_constraints(self):
         constraints = ['book', 'food', 'keyword', 'rating', 'cookedon', 'createdon']
         for c in constraints:
             setattr(self, f'{c}_constraints', [json.loads(x.replace("'", '"')) for x in getattr(self.options, c, [])])
@@ -50,9 +51,9 @@ class Menu:
         else:
             for r in self.tandoor.get_recipes(params=self.options.recipes, filters=self.options.filters):
                 self.recipes.append(Recipe(r))
-            for r in self.tandoor.get_mealplan_recipes(mealtype_id=self.options.plan_type, date=args.mp_date, params=self.options.recipes):
+            for r in self.tandoor.get_mealplan_recipes(mealtype_id=self.options.plan_type, date=self.options.mp_date, params=self.options.recipes):
                 self.recipes.append(Recipe(r))
-        self.recipes = list(set(menu.recipes))
+        self.recipes = list(set(self.recipes))
 
     def prepare_books(self):
         for constraint in self.book_constraints:
@@ -122,10 +123,13 @@ class Menu:
                 constraint['condition'] = [c]
             if not isinstance(c := constraint.get('except', []), list):
                 constraint['except'] = [c]
+            kw_tree = []
             if self.include_children:
-                kw_tree = []
                 for kw in constraint['condition']:
                     kw_tree += self.tandoor.get_keyword_tree(kw)
+            else:
+                for kw in constraint['condition']:
+                    kw_tree.append(self.tandoor.get_food(kw))
             constraint['condition'] = list(set([Keyword(k) for k in kw_tree]))
 
     def prepare_data(self):
@@ -184,12 +188,14 @@ class Menu:
                 found_recipes = Recipe.recipesWithDate(found_recipes, 'cookedon', cookedon, after=c.get('cookedon_after', False))
             self.recipe_picker.add_createdon_constraints(found_recipes, c['count'], c['operator'], exclude=exclude)
 
-        return self.recipe_picker.solve()
+        self.selected_recipes = self.recipe_picker.solve()
+        return self.selected_recipes
 
-    def generate_menu_file(self):
+    def generate_menu_file(self, recipes):
+        from menu import MenuGenerator
         self.logger.info('Generating menu file, this may take awhile.')
-        menu = MenuGenerator(self.tandoor, self.options, self.logger)
-        menu.write_menu(recipes)
+        menu_gen = MenuGenerator(self.tandoor, self.options, self.logger)
+        menu_gen.write_menu(recipes)
 
 
 def parse_args():
@@ -240,8 +246,10 @@ def parse_args():
 def validate_args(args):
     valid = True
     args.mp_date, _ = format_date(args.mp_date, future=True)
+    if not args.output_dir:
+        args.output_dir = os.path.join(os.getcwd(), 'templates')
     if args.create_mp:
-        if not bool(args.mp_date) & bool(args.mp_type):
+        if not (args.mp_date and args.mp_type):
             valid = False
             raise RuntimeError('When "create_mp" is enabled, both "mp_date" and "mp_type" must be provided.')
         try:
@@ -249,8 +257,6 @@ def validate_args(args):
         except (ValueError, TypeError):
             valid = False
             raise RuntimeError('"mp_type" must be a valid Meal Type ID.')
-        if not args.output_dir:
-            args.output_dir = os.path.join(os.getcwd(), 'templates')
         if args.cleanup_mp:
             args.cleanup_date, _ = format_date(args.cleanup_date)
             print(f'Uncooked meal plans will be cleaned up beginning on {args.cleanup_date.strftime("%Y-%m-%d")} with meal type {args.mp_type}.')
@@ -268,12 +274,12 @@ if __name__ == "__main__":
 
     if len(menu.recipes) < menu.choices:
         menu.logger.info(f"Not enough recipes to generate a menu.  Only {len(menu.recipes)} recipes to work with.")
-        exit()
+        sys.exit(1)
 
     recipes = menu.select_recipes()
 
     menu.logger.info(f'Selected {len(recipes)} recipes for the menu.')
-    if menu.logger.loglevel == 10:
+    if menu.logger.loglevel == logging.DEBUG:
         for r in recipes:
             date_cooked = (x := getattr(r, 'cookedon', None)) and x.strftime("%Y-%m-%d") or "Never"
             menu.logger.debug(f'Selected recipe {r} for the menu with rating {r.rating}. Created on: {r.createdon.strftime("%Y-%m-%d")} and last cooked {date_cooked}')
@@ -294,7 +300,7 @@ if __name__ == "__main__":
         mpm.create_from_recipes(recipes, args.mp_type, date=args.mp_date, note=args.mp_note, share=args.share_with)
 
     if args.create_file:
-        menu.generate_menu_file()
+        menu.generate_menu_file(recipes)
 
     if menu.tandoor.progress:
         menu.tandoor.progress.last_step()

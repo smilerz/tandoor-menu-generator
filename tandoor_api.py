@@ -1,16 +1,20 @@
-import json
+import logging
 
 import requests
 
 from utils import TQDM, cached, display_progress
 
 
+class TandoorAPIError(Exception):
+    pass
+
+
 class TandoorAPI:
-    progress = None
 
     def __init__(self, url, token, logger, **kwargs):
         self.logger = logger
-        if self.logger.loglevel != 10:
+        self.progress = None
+        if self.logger.loglevel != logging.DEBUG:
             self.progress = TQDM(total=100)
         self.ttl = kwargs.get('cache', 240)
         self.token = token
@@ -33,21 +37,24 @@ class TandoorAPI:
     @cached
     def get_paged_results(self, url, params, **kwargs):
         results = []
+        is_first_page = True
         while url:
             self.logger.debug(f'Connecting to tandoor api at url: {url}')
             self.logger.debug(f'Connecting with params: {str(params)}')
-            if '?' in url:
+            if not is_first_page and '?' in url:
                 params = None
+            is_first_page = False
             response = requests.get(url, headers=self.headers, params=params)
-            content = json.loads(response.content)
+
+            if response.status_code != 200:
+                self.logger.info(f"Failed to fetch data. Status code: {response.status_code}: {response.text}")
+                raise TandoorAPIError(f"Failed to fetch data. Status code: {response.status_code}: {response.text}")
+
+            content = response.json()
             new_results = content.get('results', [])
             self.logger.debug(f'Retrieved {len(new_results)} results.')
             results = results + new_results
             url = content.get('next', None)
-
-            if response.status_code != 200:
-                self.logger.info(f"Failed to fetch recipes. Status code: {response.status_code}: {response.text}")
-                raise Exception(f"Failed to fetch recipes. Status code: {response.status_code}: {response.text}")
         return results
 
     @display_progress
@@ -58,9 +65,9 @@ class TandoorAPI:
         response = requests.get(url, headers=self.headers)
 
         if response.status_code != 200:
-            self.logger.info(f"Failed to fetch recipes. Status code: {response.status_code}: {response.text}")
-            raise Exception(f"Failed to fetch recipes. Status code: {response.status_code}: {response.text}")
-        return json.loads(response.content)
+            self.logger.info(f"Failed to fetch data. Status code: {response.status_code}: {response.text}")
+            raise TandoorAPIError(f"Failed to fetch data. Status code: {response.status_code}: {response.text}")
+        return response.json()
 
     def create_object(self, url, data, **kwargs):
         self.logger.debug(f'Create object with tandoor api at url: {url}')
@@ -70,7 +77,7 @@ class TandoorAPI:
             return response.json()
         else:
             self.logger.info(f'Error creating object: {response.text}')
-            raise RuntimeError(f'Error creating object: {response.text}')
+            raise TandoorAPIError(f'Error creating object: {response.text}')
 
     def delete_object(self, url, obj_id, **kwargs):
         self.logger.debug(f'Deleteing object with tandoor api at url: {url}')
@@ -78,14 +85,18 @@ class TandoorAPI:
 
         if response.status_code != 204:
             self.logger.info(f'Error deleting object: {response.text}')
-            raise RuntimeError(f'Error deleting object: {response.text}')
+            raise TandoorAPIError(f'Error deleting object: {response.text}')
 
-    def get_recipes(self, params={}, filters=[], **kwargs):
+    def get_recipes(self, params=None, filters=None, **kwargs):
         """
         Fetch a list of recipes from the API.
         Returns:
             list: A list of recipe objects in tandoor recipe format.
         """
+        if params is None:
+            params = {}
+        if filters is None:
+            filters = []
         url = f"{self.url}recipe/"
         recipes = []
         if params or kwargs.get('all_recipes', False):
@@ -117,15 +128,16 @@ class TandoorAPI:
         if response.status_code == 200:
             return response.json()
         else:
-            raise Exception(f"Failed to fetch recipe details. Status code: {response.status_code}: {response.text}")
+            raise TandoorAPIError(f"Failed to fetch recipe details. Status code: {response.status_code}: {response.text}")
 
-    def get_keyword_tree(self, kw_id, params={}, **kwargs):
+    def get_keyword_tree(self, kw_id, params=None, **kwargs):
         """
         Fetch a keyword and it's descendants from the API.
         Returns:
             list: A list of keyword objects in tandoor format.
         """
-
+        if params is None:
+            params = {}
         url = f"{self.url}keyword/"
         params['tree'] = kw_id
         params['page_size'] = 100
@@ -134,13 +146,14 @@ class TandoorAPI:
         self.logger.debug(f'Returning {len(keywords)} total keywords.')
         return keywords
 
-    def get_food_tree(self, food_id, params={}, **kwargs):
+    def get_food_tree(self, food_id, params=None, **kwargs):
         """
         Fetch a food and it's descendants from the API.
         Returns:
             list: A list of food objects in tandoor format.
         """
-
+        if params is None:
+            params = {}
         url = f"{self.url}food/"
         params['tree'] = food_id
         params['page_size'] = 100
@@ -149,11 +162,11 @@ class TandoorAPI:
         self.logger.debug(f'Returning {len(foods)} total food.')
         return foods
 
-    def get_food(self, food_id, params={}, **kwargs):
+    def get_food(self, food_id, **kwargs):
         """
-        Fetch a food and it's descendants from the API.
+        Fetch a food from the API.
         Returns:
-            list: A list of food objects in tandoor format.
+            dict: A food object in tandoor format.
         """
 
         url = f"{self.url}food/"
@@ -162,7 +175,7 @@ class TandoorAPI:
         self.logger.debug(f'Returning food {food["id"]}: {food["name"]}.')
         return food
 
-    def get_book(self, book_id, params={}, **kwargs):
+    def get_book(self, book_id, **kwargs):
         """
         Fetch a book from the API.
         Returns:
@@ -175,9 +188,7 @@ class TandoorAPI:
         self.logger.debug(f'Returning book {book["id"]}: {book["name"]}.')
         return book
 
-    @display_progress
-    @cached
-    def get_book_recipes(self, book, params={}, **kwargs):
+    def get_book_recipes(self, book, **kwargs):
         """
         Fetch all recipes in a book from the API.
         Returns:
@@ -193,7 +204,7 @@ class TandoorAPI:
         self.logger.debug(f'Returning book {book.id}: {book.name} with {len(recipes)} recipes.')
         return recipes
 
-    def get_mealplan_recipes(self, mealtype_id=[], date=None, params={}, **kwargs):
+    def get_mealplan_recipes(self, mealtype_id=None, date=None, params=None, **kwargs):
         """
         Fetch all recipes of mealtype.
         Returns:
@@ -212,7 +223,9 @@ class TandoorAPI:
         self.logger.debug(f"Returning recipes from meal plan on {date.strftime('%Y-%m-%d')} with meal play type IDs: {mealtype_id}.")
         return [r['recipe'] for r in self.get_unpaged_results(url, '', **kwargs)]
 
-    def create_meal_plan(self, recipe=None, title=None, servings=1, date=None, note=None, type=None, shared=[], **kwargs):
+    def create_meal_plan(self, recipe=None, title=None, servings=1, date=None, note=None, meal_type=None, shared=None, **kwargs):
+        if shared is None:
+            shared = []
         url = f"{self.url}meal-plan/"
         plan = self.create_object(
             url,
@@ -228,11 +241,11 @@ class TandoorAPI:
                 'shared': shared,
                 'from_date': date.strftime('%Y-%m-%d'),
                 'to_date': date.strftime('%Y-%m-%d'),
-                'meal_type': self.get_unpaged_results(f'{self.url}meal-type/', type)
+                'meal_type': self.get_unpaged_results(f'{self.url}meal-type/', meal_type)
             }
         )
 
-        self.logger.debug(f'Succesfully created meal plan {plan["id"]}: {title} with type {type}')
+        self.logger.debug(f'Succesfully created meal plan {plan["id"]}: {title} with type {meal_type}')
 
         return plan
 
@@ -254,5 +267,5 @@ class TandoorAPI:
 
         if response.status_code != 200:
             self.logger.info(f"Failed to fetch food substitutes. Status code: {response.status_code}: {response.text}")
-            raise Exception(f"Failed to fetch food substitutes. Status code: {response.status_code}: {response.text}")
-        return json.loads(response.content)
+            raise TandoorAPIError(f"Failed to fetch food substitutes. Status code: {response.status_code}: {response.text}")
+        return response.json()

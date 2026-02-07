@@ -68,10 +68,10 @@ class Recipe(SetEnabledObjects):
             filtered list of Recipes
         '''
         if after:
-            return [r for r in recipes if (d := getattr(r, field, None)) is not None and d > date]
+            return [r for r in recipes if (d := getattr(r, field, None)) is not None and d >= date]
 
         else:
-            return [r for r in recipes if (d := getattr(r, field, None)) is not None and d < date]
+            return [r for r in recipes if (d := getattr(r, field, None)) is not None and d <= date]
 
     @staticmethod
     def recipesWithRating(recipes, rating):

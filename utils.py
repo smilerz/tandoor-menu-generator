@@ -9,13 +9,21 @@ from uuid import NAMESPACE_OID, uuid3
 from tqdm import tqdm
 from tzlocal import get_localzone
 
-try:
-    caches = shelve.open('caches.db', writeback=True)
-    for key in caches:
-        if caches[key]['expired'] < datetime.now():
-            caches.pop(key)
-except FileNotFoundError:
-    caches = {}
+_caches = None
+
+
+def _get_caches():
+    global _caches
+    if _caches is not None:
+        return _caches
+    try:
+        _caches = shelve.open('caches.db', writeback=True)
+        keys_to_delete = [k for k in _caches if _caches[k]['expired'] < datetime.now()]
+        for key in keys_to_delete:
+            _caches.pop(key)
+    except Exception:
+        _caches = {}
+    return _caches
 
 
 class InfoFilter(logging.Filter):
@@ -190,13 +198,10 @@ def display_progress(func):
         result = func(self, *args, **kwargs)
         try:
             progress = self.progress or None
-        except NameError:
-            try:
-                progress = progress or None
-            except NameError:
-                progress = None
+        except AttributeError:
+            progress = None
         if progress:
-            progress.update_step()  # Increment progress by 1 step after each function call
+            progress.update_step()
         return result
     return wrapper
 
@@ -204,10 +209,11 @@ def display_progress(func):
 def cached(func):
     @wraps(func)
     def wrapper(self, *args, **kwargs):
-        if ttl := kwargs.get('ttl', None) is None:
+        caches = _get_caches()
+        if (ttl := kwargs.get('ttl', None)) is None:
             try:
                 ttl = self.ttl
-            except NameError:
+            except AttributeError:
                 ttl = 240
         if not ttl or ttl <= 0:
             return func(self, *args, **kwargs)
@@ -216,7 +222,8 @@ def cached(func):
         key = str(uuid3(NAMESPACE_OID, ''.join([str(x) for x in args]) + str(kwargs)))
         if key not in caches or caches[key]['expired'] < datetime.now():
             caches[key] = {'data': func(self, *args, **kwargs), 'expired': datetime.now() + expire_after}
-            caches.sync()
+            if hasattr(caches, 'sync'):
+                caches.sync()
 
         return caches[key]['data']
     return wrapper
